@@ -1,0 +1,133 @@
+
+
+import pandas as pd
+import numpy as np
+import tensorflow as tf
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.impute import KNNImputer
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, mean_squared_log_error
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.metrics import explained_variance_score
+
+data = pd.read_csv('https://www.quandl.com/api/v3/datasets/CHRIS/CME_BO1.csv?start_date=2014-01-01&end_date=2016-12-31')
+
+# Filter the data for the desired period (2014-2016)
+start_date = '2014-01-01'
+end_date = '2016-12-31'
+filtered_data = data[(data['Date'] >= start_date) & (data['Date'] <= end_date)]
+
+# Extract the closing prices
+closing_prices = filtered_data['Settle'].values
+
+# Normalize the closing prices between 0 and 1
+scaler = MinMaxScaler()
+normalized_prices = scaler.fit_transform(closing_prices.reshape(-1, 1))
+
+# Function to impute missing values using k-nearest neighbors
+def impute_missing_values(data, n_neighbors):
+    imputer = KNNImputer(n_neighbors=n_neighbors)
+    imputed_data = imputer.fit_transform(data)
+    return imputed_data
+
+# Function to create a dataset for training the neural network
+def create_dataset(data, window_size):
+    X, y = [], []
+    for i in range(len(data) - window_size):
+        X.append(data[i:i+window_size])
+        y.append(data[i+window_size])
+    return np.array(X), np.array(y)
+
+# Set the window size for the time series data
+window_size = 30
+
+# Define the walk-forward cross-validation with purging and embargo
+tscv = TimeSeriesSplit(n_splits=5)
+rmse_scores = []
+mae_scores = []
+r2_scores = []
+msle_scores = []
+mpe_scores = []
+mape_scores = []
+ev_scores = []
+
+for train_index, test_index in tscv.split(normalized_prices):
+    # Apply purging and embargo
+    train_data = normalized_prices[train_index]
+    test_data = normalized_prices[test_index]
+
+    # Impute missing values in the training and testing data
+    n_neighbors = 5
+    train_data_imputed = impute_missing_values(train_data, n_neighbors)
+    test_data_imputed = impute_missing_values(test_data, n_neighbors)
+
+    # Create the training dataset
+    X_train, y_train = create_dataset(train_data_imputed, window_size)
+
+    # Create the testing dataset
+    X_test, y_test = create_dataset(test_data_imputed, window_size)
+
+    # Create the neural network model
+    model = tf.keras.Sequential([
+        tf.keras.layers.Dense(64, activation='relu', input_shape=(window_size,)),
+        tf.keras.layers.Dense(1)
+    ])
+
+    # Compile the model
+    model.compile(optimizer='adam', loss='mean_squared_error')
+
+    # Train the model
+    model.fit(X_train, y_train, epochs=50, batch_size=32)
+
+    # Make predictions on the testing dataset
+    y_pred = model.predict(X_test)
+
+    # Denormalize the predicted and actual closing prices
+    y_pred_denormalized = scaler.inverse_transform(y_pred)
+    y_test_denormalized = scaler.inverse_transform(y_test)
+
+    # Calculate evaluation metrics
+    rmse = np.sqrt(mean_squared_error(y_test_denormalized, y_pred_denormalized))
+    mae = mean_absolute_error(y_test_denormalized, y_pred_denormalized)
+    r2 = r2_score(y_test_denormalized, y_pred_denormalized)
+    msle = mean_squared_log_error(y_test_denormalized, y_pred_denormalized)
+    mpe = np.mean((y_test_denormalized - y_pred_denormalized) / y_test_denormalized) * 100
+    mape = np.mean(np.abs((y_test_denormalized - y_pred_denormalized) / y_test_denormalized)) * 100
+    ev = explained_variance_score(y_test_denormalized, y_pred_denormalized)
+
+    # Append scores to lists
+    rmse_scores.append(rmse)
+    mae_scores.append(mae)
+    r2_scores.append(r2)
+    msle_scores.append(msle)
+    mpe_scores.append(mpe)
+    mape_scores.append(mape)
+    ev_scores.append(ev)
+
+    # Calculate the average scores across all cross-validation folds
+    avg_rmse = np.mean(rmse_scores)
+    avg_mae = np.mean(mae_scores)
+    avg_r2 = np.mean(r2_scores)
+    avg_msle = np.mean(msle_scores)
+    avg_mpe = np.mean(mpe_scores)
+    avg_mape = np.mean(mape_scores)
+    avg_ev = np.mean(ev_scores)
+
+    # Visualize the performance using a line plot
+    plt.figure(figsize=(10, 6))
+    plt.plot(y_test_denormalized, label='Actual')
+    plt.plot(y_pred_denormalized, label='Predicted')
+    plt.xlabel('Time')
+    plt.ylabel('Closing Price')
+    plt.title('Closing Prices: Actual vs Predicted')
+    plt.legend()
+    plt.show()
+
+    print('Average RMSE:', avg_rmse)
+    print('Average MAE:', avg_mae)
+    print('Average R2:', avg_r2)
+    print('Average MSLE:', avg_msle)
+    print('Average MPE:', avg_mpe)
+    print('Average MAPE:', avg_mape)
+    print('Average Explained Variance Score:', avg_ev)
