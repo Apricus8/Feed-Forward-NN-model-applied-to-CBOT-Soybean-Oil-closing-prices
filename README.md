@@ -1,5 +1,5 @@
 # FFNN model applied to CBOT Soybean oil closing-prices
-This NN model code applied to CBOT Soybean oil listed contracts incorporates the walk-forward cross-validation with purging &amp; embargo, as well as the additional evaluation metrics. It evaluates the model's performance using various evaluation metrics and visualizes the predicted and actual closing prices.
+This feed forward NN model code applied to CBOT Soybean oil listed contracts incorporates the walk-forward cross-validation with purging &amp; embargo, as well as the additional evaluation metrics. It evaluates the model's performance using various evaluation metrics and visualizes the predicted and actual closing prices.
 
 **More technically.**
 The provided code performs the following steps:
